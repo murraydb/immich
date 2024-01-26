@@ -15,6 +15,7 @@ export interface IVersion {
 }
 
 export enum VersionType {
+  EQUAL = 0,
   PATCH = 1,
   MINOR = 2,
   MAJOR = 3,
@@ -49,7 +50,7 @@ export class Version implements IVersion {
     }
   }
 
-  private compare(version: Version): [number, VersionType | null] {
+  private compare(version: Version): [number, VersionType] {
     for (const [i, key] of this.types.entries()) {
       const diff = this[key] - version[key];
       if (diff !== 0) {
@@ -57,12 +58,12 @@ export class Version implements IVersion {
       }
     }
 
-    return [0, null];
+    return [0, VersionType.EQUAL];
   }
 
-  isOlderThan(version: Version): VersionType | null {
+  isOlderThan(version: Version): VersionType {
     const [bool, type] = this.compare(version);
-    return bool < 0 ? type : null;
+    return bool < 0 ? type : VersionType.EQUAL;
   }
 
   isEqual(version: Version): boolean {
@@ -70,9 +71,9 @@ export class Version implements IVersion {
     return bool === 0;
   }
 
-  isNewerThan(version: Version): VersionType | null {
+  isNewerThan(version: Version): VersionType {
     const [bool, type] = this.compare(version);
-    return bool > 0 ? type : null;
+    return bool > 0 ? type : VersionType.EQUAL;
   }
 }
 
