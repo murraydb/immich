@@ -10,6 +10,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/modules/album/providers/current_album.provider.dart';
+import 'package:immich_mobile/modules/asset_viewer/models/asset_index.dart';
 import 'package:immich_mobile/modules/asset_viewer/providers/asset_stack.provider.dart';
 import 'package:immich_mobile/modules/asset_viewer/providers/current_asset.provider.dart';
 import 'package:immich_mobile/modules/asset_viewer/providers/show_controls.provider.dart';
@@ -20,6 +21,7 @@ import 'package:immich_mobile/modules/asset_viewer/providers/video_player_value_
 import 'package:immich_mobile/modules/asset_viewer/services/asset_stack.service.dart';
 import 'package:immich_mobile/modules/asset_viewer/ui/advanced_bottom_sheet.dart';
 import 'package:immich_mobile/modules/asset_viewer/ui/exif_bottom_sheet.dart';
+import 'package:immich_mobile/modules/asset_viewer/ui/stacked_children.dart';
 import 'package:immich_mobile/modules/asset_viewer/ui/top_control_app_bar.dart';
 import 'package:immich_mobile/modules/asset_viewer/views/video_viewer_page.dart';
 import 'package:immich_mobile/modules/backup/providers/manual_upload.provider.dart';
@@ -80,15 +82,17 @@ class GalleryViewerPage extends HookConsumerWidget {
     Offset? localPosition;
     final authToken = 'Bearer ${Store.get(StoreKey.accessToken)}';
     final header = {"Authorization": authToken};
-    final currentIndex = useState(initialIndex);
-    final currentAsset = loadAsset(currentIndex.value);
     final isTrashEnabled =
         ref.watch(serverInfoProvider.select((v) => v.serverFeatures.trash));
     final navStack = AutoRouter.of(context).stackData;
     final isFromTrash = isTrashEnabled &&
         navStack.length > 2 &&
         navStack.elementAt(navStack.length - 2).name == TrashRoute.name;
-    final stackIndex = useState(-1);
+    final index = useState(AssetIndex(currentIndex: initialIndex));
+    final stackIndex = index.value.stackIndex;
+    final currentIndex = index.value.currentIndex;
+    final currentAsset = loadAsset(currentIndex);
+
     final stack = showStack && currentAsset.stackChildrenCount > 0
         ? ref.watch(assetStackStateProvider(currentAsset))
         : <Asset>[];
@@ -97,16 +101,15 @@ class GalleryViewerPage extends HookConsumerWidget {
     final isFromDto = currentAsset.id == Isar.autoIncrement;
     final album = ref.watch(currentAlbumProvider);
 
-    Asset asset() => stackIndex.value == -1
-        ? currentAsset
-        : stackElements.elementAt(stackIndex.value);
+    Asset asset() =>
+        stackIndex == -1 ? currentAsset : stackElements.elementAt(stackIndex);
     final isOwner = asset().ownerId == ref.watch(currentUserProvider)?.isarId;
     final isPartner = ref
         .watch(partnerSharedWithProvider)
         .map((e) => e.isarId)
         .contains(asset().ownerId);
 
-    bool isParent = stackIndex.value == -1 || stackIndex.value == 0;
+    bool isParent = stackIndex == -1 || stackIndex == 0;
 
     // Listen provider to prevent autoDispose when navigating to other routes from within the gallery page
     ref.listen(currentAssetProvider, (_, __) {});
@@ -212,11 +215,11 @@ class GalleryViewerPage extends HookConsumerWidget {
     }
 
     void removeAssetFromStack() {
-      if (stackIndex.value > 0 && showStack) {
+      if (stackIndex > 0 && showStack) {
         ref
             .read(assetStackStateProvider(currentAsset).notifier)
-            .removeChild(stackIndex.value - 1);
-        stackIndex.value = stackIndex.value - 1;
+            .removeChild(stackIndex - 1);
+        index.value = index.value.copyWith(stackIndex: stackIndex - 1);
       }
     }
 
@@ -493,51 +496,6 @@ class GalleryViewerPage extends HookConsumerWidget {
       );
     }
 
-    Widget buildStackedChildren() {
-      return ListView.builder(
-        shrinkWrap: true,
-        scrollDirection: Axis.horizontal,
-        itemCount: stackElements.length,
-        itemBuilder: (context, index) {
-          final assetId = stackElements.elementAt(index).remoteId;
-          return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: GestureDetector(
-              onTap: () => stackIndex.value = index,
-              child: Container(
-                width: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: (stackIndex.value == -1 && index == 0) ||
-                          index == stackIndex.value
-                      ? Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        )
-                      : null,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    fit: BoxFit.cover,
-                    imageUrl:
-                        '${Store.get(StoreKey.serverEndpoint)}/asset/thumbnail/$assetId',
-                    httpHeaders: {
-                      "Authorization":
-                          "Bearer ${Store.get(StoreKey.accessToken)}",
-                    },
-                    errorWidget: (context, url, error) =>
-                        const Icon(Icons.image_not_supported_outlined),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    }
-
     void showStackActionItems() {
       showModalBottomSheet<void>(
         context: context,
@@ -560,7 +518,7 @@ class GalleryViewerPage extends HookConsumerWidget {
                             .read(assetStackServiceProvider)
                             .updateStackParent(
                               currentAsset,
-                              stackElements.elementAt(stackIndex.value),
+                              stackElements.elementAt(stackIndex),
                             );
                         ctx.pop();
                         context.popRoute();
@@ -595,7 +553,7 @@ class GalleryViewerPage extends HookConsumerWidget {
                         await ref.read(assetStackServiceProvider).updateStack(
                           currentAsset,
                           childrenToRemove: [
-                            stackElements.elementAt(stackIndex.value),
+                            stackElements.elementAt(stackIndex),
                           ],
                         );
                         removeAssetFromStack();
@@ -699,7 +657,12 @@ class GalleryViewerPage extends HookConsumerWidget {
                   ),
                   child: SizedBox(
                     height: 40,
-                    child: buildStackedChildren(),
+                    child: StackedChildren(
+                      stackIndex: stackIndex,
+                      stackElements: stackElements,
+                      onTap: (i) =>
+                          index.value = index.value.copyWith(stackIndex: i),
+                    ),
                   ),
                 ),
               Visibility(
@@ -777,10 +740,10 @@ class GalleryViewerPage extends HookConsumerWidget {
               itemCount: totalAssets,
               scrollDirection: Axis.horizontal,
               onPageChanged: (value) {
-                final next = currentIndex.value < value ? value + 1 : value - 1;
+                final next = currentIndex < value ? value + 1 : value - 1;
                 precacheNextImage(next);
-                currentIndex.value = value;
-                stackIndex.value = -1;
+                index.value = index.value
+                    .copyWith(currentIndex: value, stackIndex: - 1);
                 HapticFeedback.selectionClick();
               },
               loadingBuilder: (context, event, index) {
@@ -821,8 +784,7 @@ class GalleryViewerPage extends HookConsumerWidget {
                     : webPThumbnail;
               },
               builder: (context, index) {
-                final a =
-                    index == currentIndex.value ? asset() : loadAsset(index);
+                final a = index == currentIndex ? asset() : loadAsset(index);
                 final ImageProvider provider = finalImageProvider(a);
 
                 if (a.isImage && !isPlayingMotionVideo.value) {
