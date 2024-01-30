@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { AppRoute } from '../constants';
 import { getSavedUser, setUser } from '$lib/stores/user.store';
 import { getAuthCookie } from './cookies';
+import { serverInfo } from '$lib/stores/server-info.store';
 
 export interface AuthOptions {
   admin?: true;
@@ -18,7 +19,6 @@ export const getAuthUser = async () => {
   }
 };
 
-// TODO: re-use already loaded user (once) instead of fetching on each page navigation
 export const authenticate = async (options?: AuthOptions) => {
   options = options || {};
   const isAuthenticated = getAuthCookie() === 'true';
@@ -35,6 +35,13 @@ export const authenticate = async (options?: AuthOptions) => {
   }
   if (!savedUser && user) {
     setUser(user);
+  }
+};
+
+export const requestServerInfo = async () => {
+  if (getSavedUser()) {
+    const { data } = await api.serverInfoApi.getServerInfo();
+    serverInfo.set(data);
   }
 };
 
