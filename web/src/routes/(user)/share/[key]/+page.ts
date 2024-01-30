@@ -1,4 +1,4 @@
-import { getAuthUser } from '$lib/utils/auth';
+import { authenticate } from '$lib/utils/auth';
 import { api, ThumbnailFormat } from '@api';
 import { error } from '@sveltejs/kit';
 import type { AxiosError } from 'axios';
@@ -6,7 +6,7 @@ import type { PageLoad } from './$types';
 
 export const load = (async ({ params }) => {
   const { key } = params;
-  await getAuthUser();
+  await authenticate({ public: true });
 
   try {
     const { data: sharedLink } = await api.sharedLinkApi.getMySharedLink({ key });
