@@ -117,14 +117,21 @@ export class DatabaseRepository implements IDatabaseRepository {
       return false;
     }
 
-    const res = await this.dataSource.query(
-      `
-        SELECT idx_status
-        FROM pg_vector_index_stat
-        WHERE indexname = $1`,
-      [name],
-    );
-    return res[0]?.['idx_status'] === 'UPGRADE';
+    try {
+      const res = await this.dataSource.query(
+        `
+          SELECT idx_status
+          FROM pg_vector_index_stat
+          WHERE indexname = $1`,
+        [name],
+      );
+      return res[0]?.['idx_status'] === 'UPGRADE';
+    } catch (err) {
+      if ((err as any).message.includes('index is not existing')) {
+        return true;
+      }
+      throw err;
+    }
   }
 
   private async createVectorIndex(manager: EntityManager, indexName: string, table: string): Promise<void> {
